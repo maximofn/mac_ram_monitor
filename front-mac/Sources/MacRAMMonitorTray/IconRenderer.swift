@@ -68,6 +68,15 @@ private func formatUsedShort(_ bytes: UInt64) -> String {
     }
 }
 
+/// "used/total" label in GiB, e.g. "10.1/16G". Used keeps one decimal so small
+/// changes are visible; total is always an integer (Mac RAM ships in round
+/// 8/16/24/32/64/96/128/192/256 GiB tiers).
+private func formatUsedOverTotal(used: UInt64, total: UInt64) -> String {
+    let usedGib = Double(used) / (1024 * 1024 * 1024)
+    let totalGib = Double(total) / (1024 * 1024 * 1024)
+    return String(format: "%.1f/%.0fG", usedGib, totalGib)
+}
+
 struct IconRenderer {
     let height: CGFloat
     let baseIcon: CGImage?
@@ -162,8 +171,8 @@ struct IconRenderer {
 
     private func layout(memory: Memory?, scale: CGFloat, connected: Bool, appearance: IconAppearance) -> Layout {
         let textPx = textSize(forHeight: height)
-        // Reserve enough width for the worst case "(99.9G)" — 7 chars in mono digits.
-        let probeWidth = measureText("(99.9G)", size: textPx)
+        // Reserve enough width for the worst case "99.9/256G" — 9 chars in mono digits.
+        let probeWidth = measureText("99.9/256G", size: textPx)
         let donutSize = max(8, height - donutPadding * 2)
         let iconW: CGFloat = baseIcon.map { CGFloat($0.width) / scale } ?? 0
 
@@ -236,8 +245,8 @@ struct IconRenderer {
             ctx.restoreGState()
         }
 
-        // Label is the used memory in GiB, e.g. "(12.4G)".
-        let label = "(\(formatUsedShort(memory.usedBytes)))"
+        // Label is "used/total" in GiB, e.g. "10.1/16G".
+        let label = formatUsedOverTotal(used: memory.usedBytes, total: memory.totalBytes)
         let labelColor = layout.connected
             ? IconColors.text(layout.appearance)
             : IconColors.dimText(layout.appearance)
