@@ -87,8 +87,8 @@ struct IconRenderer {
     }
 
     @MainActor
-    func renderImage(memory: Memory?, connected: Bool, appearance: IconAppearance) -> NSImage? {
-        guard let result = renderCGImage(memory: memory, connected: connected, appearance: appearance) else {
+    func renderImage(memory: Memory?, connected: Bool, appearance: IconAppearance, compact: Bool = false) -> NSImage? {
+        guard let result = renderCGImage(memory: memory, connected: connected, appearance: appearance, compact: compact) else {
             return nil
         }
         let img = NSImage(cgImage: result.cgImage, size: result.logicalSize)
@@ -101,9 +101,10 @@ struct IconRenderer {
         memory: Memory?,
         connected: Bool,
         to path: String,
-        appearance: IconAppearance = .dark
+        appearance: IconAppearance = .dark,
+        compact: Bool = false
     ) throws {
-        guard let result = renderCGImage(memory: memory, connected: connected, appearance: appearance) else {
+        guard let result = renderCGImage(memory: memory, connected: connected, appearance: appearance, compact: compact) else {
             throw NSError(domain: "IconRenderer", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "render failed"])
         }
@@ -126,9 +127,9 @@ struct IconRenderer {
         let logicalSize: CGSize
     }
 
-    private func renderCGImage(memory: Memory?, connected: Bool, appearance: IconAppearance) -> RenderResult? {
+    private func renderCGImage(memory: Memory?, connected: Bool, appearance: IconAppearance, compact: Bool) -> RenderResult? {
         let scale: CGFloat = 2
-        let layout = self.layout(memory: memory, scale: scale, connected: connected, appearance: appearance)
+        let layout = self.layout(memory: memory, scale: scale, connected: connected, appearance: appearance, compact: compact)
         let pxW = max(1, Int(layout.totalLogicalWidth * scale))
         let pxH = max(1, Int(height * scale))
 
@@ -167,12 +168,13 @@ struct IconRenderer {
         let memory: Memory?
         let connected: Bool
         let appearance: IconAppearance
+        let compact: Bool
     }
 
-    private func layout(memory: Memory?, scale: CGFloat, connected: Bool, appearance: IconAppearance) -> Layout {
+    private func layout(memory: Memory?, scale: CGFloat, connected: Bool, appearance: IconAppearance, compact: Bool) -> Layout {
         let textPx = textSize(forHeight: height)
         // Reserve enough width for the worst case "99.9/256G" — 9 chars in mono digits.
-        let probeWidth = measureText("99.9/256G", size: textPx)
+        let probeWidth = compact ? 0 : measureText("99.9/256G", size: textPx)
         let donutSize = max(8, height - donutPadding * 2)
         let iconW: CGFloat = baseIcon.map { CGFloat($0.width) / scale } ?? 0
 
@@ -183,6 +185,8 @@ struct IconRenderer {
             // could be misread as "0% used".
             let dashW = measureText("-", size: textPx)
             total = iconW + 4 + dashW + 2
+        } else if compact {
+            total = iconW + 2 + donutSize
         } else {
             total = iconW + 2 + probeWidth + 2 + donutSize
         }
@@ -194,7 +198,8 @@ struct IconRenderer {
             textPx: textPx,
             memory: memory,
             connected: connected,
-            appearance: appearance
+            appearance: appearance,
+            compact: compact
         )
     }
 
@@ -245,22 +250,26 @@ struct IconRenderer {
             ctx.restoreGState()
         }
 
-        // Label is "used/total" in GiB, e.g. "10.1/16G".
-        let label = formatUsedOverTotal(used: memory.usedBytes, total: memory.totalBytes)
-        let labelColor = layout.connected
-            ? IconColors.text(layout.appearance)
-            : IconColors.dimText(layout.appearance)
-        let textX = x + layout.iconWidth + 2
-        drawText(
-            label,
-            ctx: ctx,
-            x: textX,
-            size: layout.textPx,
-            color: labelColor,
-            blockHeight: height
-        )
+        if !layout.compact {
+            // Label is "used/total" in GiB, e.g. "10.1/16G".
+            let label = formatUsedOverTotal(used: memory.usedBytes, total: memory.totalBytes)
+            let labelColor = layout.connected
+                ? IconColors.text(layout.appearance)
+                : IconColors.dimText(layout.appearance)
+            let textX = x + layout.iconWidth + 2
+            drawText(
+                label,
+                ctx: ctx,
+                x: textX,
+                size: layout.textPx,
+                color: labelColor,
+                blockHeight: height
+            )
+        }
 
-        let donutX = x + layout.iconWidth + 2 + layout.textWidth + 2
+        let donutX = layout.compact
+            ? x + layout.iconWidth + 2
+            : x + layout.iconWidth + 2 + layout.textWidth + 2
         let usedPct = max(0, min(100, memory.usedPercent))
         drawDonut(
             ctx: ctx,
